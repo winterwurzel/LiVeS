@@ -1,8 +1,8 @@
-/WaVeS/build/
-/WaVeS/dist/
-/WaVeS/main.spec
+/LiVeS/build/
+/LiVeS/dist/
+/LiVeS/main.spec
 /.idea/
-/WaVeS/
+/LiVeS/
 /main.exe
 *.pyc
 *.spec
