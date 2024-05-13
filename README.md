@@ -6,11 +6,11 @@ LiVeS (Linux Volume Sliders) is a Python app that interfaces with a microcontrol
 
 LiVeS is inspired by [Deej](https://github.com/omriharel/deej) and fulfills the exact same purpose. However, because it is written in Go, there was very little I could change about it. Using Python and the [Pycaw](https://github.com/AndreMiras) library, I made an interface that is hopefully more flexible for anyone who wants to customise the functionalities.
 
-The Arduino code can be found [here](https://github.com/omriharel/deej/blob/master/arduino/deej-5-sliders-vanilla/deej-5-sliders-vanilla.ino).
+The Arduino code can be found [here](https://github.com/winterwurzel/deej/tree/master/arduino).
 
 ## Installation
 
-The [executable](https://github.com/JRitmeester/LiVeS/releases/) can be downloaded as-is. It will create a `mapping.txt` file in the same directory as where the executable was run. This serves as the configuration file. Please read the contents of the file to see how you can designate each slider to on of the following:
+The executable can be downloaded as-is. It will create a `mapping.txt` file in the same directory as where the executable was run. This serves as the configuration file. Please read the contents of the file to see how you can designate each slider to on of the following:
 * A specific application (`chrome`, `spotify`, games, etc.)
 * System volume
 * Unmapped (everything that does not have its own slider)
@@ -52,7 +52,7 @@ Apps can be excluded from "unmapped" by assigning specific apps to a number equa
 This will allow you to control all unmapped apps with "unmapped" but exclude Chrome. Why you'd want this, I'm not sure, but it's probably useful in some edge cases.
 
 ## Usage
-Upon running the [executable](https://github.com/JRitmeester/LiVeS/releases/download/v1.0/LiVeSv1.0), a tray icon will open. Clicking the icon will reload the mappings from `mapping.txt`, so that they can be changed as desired without having to close and restart the app.
+Upon running the executable, a tray icon will open. Clicking the icon will reload the mappings from `mapping.txt`, so that they can be changed as desired without having to close and restart the app.
 
 ## Customisation
 You are free to use the source code. The repository contains a `buid.sh` file that will compile the necessary files into an executable in the same directory, including the icon. If you share this project with other parties, please do give credit where appropriate.
