@@ -1,7 +1,6 @@
-import sys
 import time
+
 import serial
-import logging
 import utils
 from pathlib import Path
 from control import Control
@@ -36,8 +35,22 @@ class VolumeThread(QThread):
         logger.info("Entering thread loop.")
         while self.running:
             if self.control.sessions is not None:
-                # Data is formatted as "<val>|<val>|<val>|<val>|<val>"
-                data = str(self.arduino.readline()[:-2], "utf-8")  # Trim off '\r\n'.
-                if data:
-                    values = [float(val) for val in data.split("|")]
-                    self.control.set_volume(values)
+                try:
+                    if self.arduino is None:
+                        self.arduino = serial.Serial(self.control.port, self.control.baudrate, timeout=0.1)
+                        logger.info("Reconnected, " + str(self.arduino))
+                    # Data is formatted as "<val>|<val>|<val>|<val>|<val>?<micmute>"
+                    data = str(self.arduino.readline()[:-2], "utf-8")  # Trim off '\r\n'.
+                    if data:
+                        values = [float(val) for val in data.split("?")[0].split("|")]
+                        self.control.set_volume(values)
+                        if data.split("?")[1]:
+                            self.control.mute_mic(bool(int(data.split("?")[1])))
+                except serial.SerialException:
+                    if not (self.arduino is None):
+                        self.arduino.close()
+                        self.arduino = None
+                        logger.info("Disconnected")
+
+                    logger.info("No Connection")
+                    time.sleep(1)

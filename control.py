@@ -1,15 +1,14 @@
 from pathlib import Path
-from typing import Union
 
-from PyQt5.QtWidgets import QMessageBox
-from pycaw.pycaw import AudioUtilities
+from pulsectl import PulseError
 from serial.tools import list_ports
 
 import utils
-from sessions import SessionGroup, Master, Session, System, Device
-import webbrowser
+from sessions import SessionGroup, Master, Session
 import re
-from pprint import pprint
+import pulsectl
+
+logger = utils.get_logger()
 
 
 class Control:
@@ -19,7 +18,7 @@ class Control:
     """
 
     def __init__(self, path=None):
-        self.path = (self.get_config_file_path() / 'WaVeS' / 'mapping.txt') if path is None else path
+        self.path = (self.get_config_file_path() / 'LiVeS' / 'mapping.txt') if path is None else path
 
         # Check if there is a custom mapping directory specified in config.yaml. If not, use %appdata%.
         mapping_dir = utils.get_mapping_dir()
@@ -35,7 +34,8 @@ class Control:
         self.baudrate = None
         self.inverted = False
         self.unmapped = []
-        self.found_pycaw_sessions = None
+        self.pulse = pulsectl.Pulse('LiVeS')
+        self.sink_number = len(self.pulse.sink_input_list())
 
         self.load_config()  # Read the mappings from mapping.txt
 
@@ -75,20 +75,9 @@ class Control:
             self.target_idxs[application_str] = int(idx)  # Store the settings in a dictionary.
 
         session_dict = {}
+        mapped_apps = []
 
-        # Look up table for the incoming Arduino data, mapping an index to a Session object.
-        self.found_pycaw_sessions = AudioUtilities.GetAllSessions()
-
-        active_sessions = {
-            session.Process.name().lower(): session
-            for session in self.found_pycaw_sessions
-            if session.Process is not None
-        }
-
-        mapped_sessions = []
-        system_session = [session for session in self.found_pycaw_sessions if "SystemRoot" in session.DisplayName][0]
-
-        # Loop through all the targets and the slider indices they are suppposed to map to.
+        # Loop through all the targets and the slider indices they are supposed to map to.
         # A target is the second part of the mapping string, after the first colon (:).
         for target, idx in self.target_idxs.items():
 
@@ -98,96 +87,69 @@ class Control:
 
                 # If indicated with "master", create a Master volume session.
                 if target == "master":
-                    session_dict[idx] = Master(idx=idx)
+                    session_dict[idx] = Master(idx=idx, pulse=self.pulse)
 
-                # If indicated with "system", create a System volume session.
-                elif target == "system":
-                    session_dict[idx] = System(idx=idx, session=system_session)
-
-                    # System sounds are considered a Session by Pycaw, so add it so that it is not picked up
-                    # at the end by an eventual "unmapped" category.
-                    mapped_sessions.append(system_session)
-
-                # If indicated by "device:", try to make a Device session, controlling an audio output device.
-                elif "device:" in target:
-                    session_dict[idx] = Device(target[7:])
-
-                # If not indicated by "master", "system", "system", or "device:", then consider it an application name,
+                # If not indicated by "master", then consider it an application name,
                 # and map only that application to the slider.
                 elif target != "unmapped":  # Can be any application
-
-                    # Check if the application name is found in the current active sessions.
-                    if target in active_sessions:
-                        session = active_sessions.get(target, None)
-                        if session is not None:  # If there is a session that matches, create a custom Session for it.
-                            session_dict[idx] = Session(idx, session)
-                        mapped_sessions.append(session)
+                    session_dict[idx] = Session(idx, app=target, pulse=self.pulse)
+                    mapped_apps.append(target)
 
             # If the target is a tuple, it is a group.
             elif type(target) == tuple:
-                active_sessions_in_group = []  # fmt: skip
+                apps_in_group = []  # fmt: skip
 
                 # Check for each application that is part of the group, if it's "master", "system" or "unmapped"
                 for target_app in target:
                     target_app = target_app.lower()
 
                     # Exclude the other categories. Might change in the future.
-                    if target_app in ["master", "system", "unmapped"] or "device:" in target_app:
+                    if target_app in ["master"]:
                         continue
 
-                    # Check if the target app is active.
-                    session = active_sessions.get(target_app, None)
-                    if session is not None:
-                        active_sessions_in_group.append(session)
-                        mapped_sessions.append(session)
+                    apps_in_group.append(target_app)
+                    mapped_apps.append(target_app)
 
                 # If one or more of the targeted applications are active, add a SessionGroup with them.
-                if len(active_sessions_in_group) > 0:
-                    session_dict[idx] = SessionGroup(group_idx=idx, sessions=active_sessions_in_group)
+                if len(apps_in_group) > 0:
+                    session_dict[idx] = SessionGroup(idx=idx,
+                                                     pulse=self.pulse,
+                                                     apps=apps_in_group)
 
         # Finally, if indicated with "unmapped", create a SessionGroup for all active audio session that haven't
         # been mapped before.
         if "unmapped" in self.target_idxs.keys():
             unmapped_idx = self.target_idxs["unmapped"]
-            unmapped_sessions = [ses for ses in active_sessions.values() if ses not in mapped_sessions]
-            if self.get_setting("system in unmapped").lower() == "false" and system_session in unmapped_sessions:
-                unmapped_sessions.remove(system_session)
-
-            session_dict[unmapped_idx] = SessionGroup(unmapped_idx, sessions=unmapped_sessions)
+            session_dict[unmapped_idx] = SessionGroup(unmapped_idx,
+                                                      pulse=self.pulse,
+                                                      apps=mapped_apps,
+                                                      unmapped=True)
 
         self.sessions = session_dict
 
-    def find_session(self, session_name: str, case_sensitive: bool = False) -> Union[Session, None]:
-        """
-        Finds a session with "session_name", if it exists. Can be searched for with case sensitivity if needed.
-        :param session_name: Name of the Process object of the session, like "chrome.exe" or "Spotify.exe".
-        Case insensitive by default.
-        :param case_sensitive: Boolean flag to search for "session_name" with case sensitivity.
-        :return: The Session with name "session_name" if it exists, None otherwise.
-        """
-        for idx, session in self.sessions.items():
-            if not case_sensitive:
-                if session.name.lower() == session_name.lower():
-                    return session
-            else:
-                if session.name == session_name:
-                    return session
-        else:
-            return None
-
-    def get_sessions(self) -> list:
-        """
-        Returns all the currently mapped audio sessions.
-        :return: List of all sessions that are currently mapped.
-        """
-        return list(self.sessions.values())
-
     def set_volume(self, values: list):
+        try:
+            for index, app in self.sessions.items():
+                volume = values[index] / 1023
+                if self.inverted:
+                    volume = 1 - volume
+                app.set_volume(volume)
+            # not the best method to react to changed sinks
+            if len(self.pulse.sink_input_list()) != self.sink_number:
+                self.sink_number = len(self.pulse.sink_input_list())
+                self.reset_volume()
+        except PulseError:
+            self.sink_number = len(self.pulse.sink_input_list())
+            self.reset_volume()
+
+    def mute_mic(self, muted: bool):
+        for source in self.pulse.source_list():
+            self.pulse.mute(source, muted)
+
+    def reset_volume(self):
+        logger.info("Resetting volume")
         for index, app in self.sessions.items():
-            volume = values[index] / 1023
-            if self.inverted:
-                volume = 1 - volume
-            app.set_volume(volume)
+            app.reset_volume()
 
     def get_port(self):
         ports = list_ports.comports()
@@ -209,4 +171,3 @@ class Control:
         """
 
         return Path.home() / "AppData/Roaming"
-

@@ -1,0 +1,11 @@
+0: master
+1: librewolf
+2: vesktop.bin
+3: plex,mpv
+4: unmapped
+
+sliders: 5
+port: /dev/ttyACM0
+device name: Arduino Micro
+baudrate: 9600
+inverted: False

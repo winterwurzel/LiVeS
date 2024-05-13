@@ -1,131 +1,121 @@
-from ctypes import cast, POINTER
 from typing import List
-
-from comtypes import CLSCTX_ALL
-from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume, AudioSession
+from abc import ABC, abstractmethod
+from pulsectl import Pulse, PulseObject
+from statistics import median
 
 import utils
-from MyAudioUtilities import MyAudioUtilities
 
 logger = utils.get_logger()
 
 
-class Session:
-    """
-    Contains the pycaw Session, the mapping index, the session name and the SimpleAudioVolume to get/set the volume.
-    """
+def get_app_name(sink: PulseObject):
+    name = sink.proplist.get('application.process.binary')
+    if name is None:
+        name = sink.proplist.get('application.name')
+    if name is None:
+        name = sink.proplist.get('node.name')
+    if name is None:
+        pass
+    return name.lower()
 
-    def __init__(self, idx: int, session: AudioSession = None):
+
+class Base(ABC):
+    def __init__(self, idx: int, pulse: Pulse):
         self.idx = idx
-        self.session = session
-        if session is not None and session.Process is not None:  # Filter out System sounds.
-            self.name = session.Process.name()
-            self.volume = self.session.SimpleAudioVolume
+        self.pulse = pulse
+        self.sinks = list()
+        self.volume = None
 
-    def __repr__(self):
-        return f"Session(name={self.name}, index={self.idx})"
+    @abstractmethod
+    def refresh_sinks(self):
+        pass
 
     def set_volume(self, value):
-        self.volume.SetMasterVolume(value, None)
+        delta = self.volume - value
+        if delta >= 0.02 or delta <= -0.02:
+            if value >= 0.97:
+                value = 1.0
+            elif value <= 0.03:
+                value = 0
+            logger.info(f"delta={self.volume - value}, current volume={self.volume}, new volume={value}")
+            for sink in self.sinks:
+                self.pulse.volume_set_all_chans(sink, value)
+            self.volume = value
+
+    def reset_volume(self):
+        self.refresh_sinks()
+        for sink in self.sinks:
+            self.pulse.volume_set_all_chans(sink, self.volume)
 
     def get_volume(self):
-        return self.volume.GetMasterVolume()
+        volumes = [self.pulse.volume_get_all_chans(session) for session in self.sinks]
+        if not volumes:
+            return 1.0
+        else:
+            return median(volumes)
 
     def mute(self):
-        self.volume.SetMute(1, None)
+        for session in self.sinks:
+            self.pulse.mute(session, True)
 
     def unmute(self):
-        self.volume.SetMute(0, None)
+        for session in self.sinks:
+            self.pulse.mute(session, False)
 
 
-class SessionGroup:
-    """
-    Contains the pycaw Session, the mapping index, the session name and the SimpleAudioVolume to get/set the volume.
-    """
-
-    def __init__(self, group_idx: int, sessions: List[AudioSession]):
-        self.group_idx = group_idx
-        self.sessions = [Session(group_idx, session) for session in sessions]
-
-    def __repr__(self):
-        return f"SessionGroup(index={self.group_idx}, " f"sessions={[session.name for session in self.sessions]})"
-
-    def __contains__(self, item: AudioSession):
-        if type(item) == AudioSession:
-            return any([s.session == item for s in self.sessions])
-        elif type(item) == int:
-            return any([s.idx == item for s in self.sessions])
-
-    def add_session(self, session: AudioSession):
-        self.sessions.append(Session(self.group_idx, session))
-
-    def set_volume(self, value):
-        for session in self.sessions:
-            session.volume.SetMasterVolume(value, None)
-
-    def get_volume(self):
-        return [session.volume.GetMasterVolume() for session in self.sessions]
-
-    def mute(self):
-        for session in self.sessions:
-            session.volume.SetMute(1, None)
-
-    def unmute(self):
-        for session in self.sessions:
-            session.volume.SetMute(0, None)
-
-
-class Master(Session):
-    def __init__(self, idx: int):
-        super().__init__(idx=idx)
-
-        # Pycaw code to get the master volume interface
-        devices = AudioUtilities.GetSpeakers()
-        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        self.volume = cast(interface, POINTER(IAudioEndpointVolume))
-
-        self.name = "Master"
-
-    def set_volume(self, value):
-        self.volume.SetMasterVolumeLevelScalar(value, None)  # Decibels for some reason
-
-    def get_volume(self):
-        return self.volume.GetMasterVolumeLevelScalar()
-
-
-class System(Session):
-    def __init__(self, idx: int, session):
-        super().__init__(idx=idx, session=session)
-        self.name = "System Sounds"
-        self.session = session
-        self.volume = session.SimpleAudioVolume
+class Session(Base):
+    def __init__(self, idx: int, pulse: Pulse, app: str):
+        self.app = app.lower()
+        super().__init__(idx=idx, pulse=pulse)
+        self.sinks = list(filter(lambda sink: app in get_app_name(sink), pulse.sink_input_list()))
+        self.volume = self.get_volume()
 
     def __repr__(self):
-        return self.name
+        return f"Session(app={self.app}, index={self.idx})"
+
+    def refresh_sinks(self):
+        self.sinks = list(filter(lambda sink: self.app in get_app_name(sink), self.pulse.sink_input_list()))
 
 
-class Device(Session):
-    def __init__(self, device_name: str):
-        super().__init__(-1)
-        self.selected_device = None
-
-        devicelist = AudioUtilities.GetAllDevices()
-        for device in devicelist:
-            if device_name.lower() in str(device).lower():
-                self.selected_device = device
-        if self.selected_device is None:
-            raise RuntimeError(f"Sound device {device_name} could not be found. Please correct the name or remove it.")
-
-        speaker = MyAudioUtilities.GetSpeaker(self.selected_device.id)
-        interface = speaker.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        self.volume = cast(interface, POINTER(IAudioEndpointVolume))
-        logger.info(f'Selected "{self}" for "{device_name.strip()}"')
+class Master(Base):
+    def __init__(self, idx: int, pulse: Pulse):
+        self.app = 'master'
+        super().__init__(idx=idx, pulse=pulse)
+        self.sinks = pulse.sink_list()
+        self.volume = self.get_volume()
 
     def __repr__(self):
-        return str(self.selected_device)
+        return f"Session(app={self.app}, index={self.idx}, volume={self.volume})"
 
-    def set_volume(self, value):
-        self.volume.SetMasterVolumeLevelScalar(value, None)  # Decibels for some reason
+    def refresh_sinks(self):
+        self.sinks = self.pulse.sink_list()
 
-    def get_volume(self):
-        return self.volume.GetMasterVolumeLevelScalar()
+
+class SessionGroup(Base):
+    def __init__(self, idx: int, apps: List[str], pulse: Pulse, unmapped: bool = False):
+        self.unmapped = unmapped
+        self.apps = apps
+        super().__init__(idx=idx, pulse=pulse)
+        if self.unmapped:
+            self.sinks = list(filter(lambda sink: all(app not in get_app_name(sink) for app in self.apps),
+                                     pulse.sink_input_list()))
+            # self.sinks = list(filter(lambda sink: get_app_name(sink) not in self.apps, pulse.sink_input_list()))
+        else:
+            self.sinks = list(filter(lambda sink: any(app in get_app_name(sink) for app in self.apps),
+                                     pulse.sink_input_list()))
+            # self.sinks = list(filter(lambda sink: get_app_name(sink) in self.apps, pulse.sink_input_list()))
+        self.volume = self.get_volume()
+
+    def __repr__(self):
+        return f"SessionGroup(index={self.idx}, " f"apps={[app for app in self.apps]}), volume={self.volume}"
+
+    def set_apps(self, apps: List[str]):
+        self.apps = apps
+
+    def refresh_sinks(self):
+        if self.unmapped:
+            self.sinks = list(filter(lambda sink: all(app not in get_app_name(sink) for app in self.apps),
+                                     self.pulse.sink_input_list()))
+        else:
+            self.sinks = list(filter(lambda sink: any(app in get_app_name(sink) for app in self.apps),
+                                     self.pulse.sink_input_list()))

@@ -1,9 +1,8 @@
 import datetime
 import logging
-import os
-import sys
 import traceback
 from pathlib import Path
+import webbrowser
 
 from PyQt5 import QtWidgets, QtGui
 from PyQt5.QtCore import pyqtSignal, QObject
@@ -13,11 +12,11 @@ import utils
 from tray_icon import SystemTrayIcon
 import sys
 default_mapping_txt = """
-# Make sure this file is placed in the same directory as vc.exe. To make this startup on boot (for Windows), create a
+# Make sure this file is placed in the same directory as vc.exe. To make this startup on boot (for Linux), create a
 # shortcut and place it in the Start-up folder.
 
 # Application is either "master" for master volume, the application name "spotify.exe" (case insensitive) for Spotify
-# (for Windows, this can be found in Task Manager under the "Details" tab), "unmapped" for any and all applications
+# (for Linux, this can be found in Task Manager under the "Details" tab), "unmapped" for any and all applications
 # that are currently running, but have not been explicitly assigned a slider. "unmapped" excludes the master channel.
 # Finally, "system" allows you to control the system sound volume.
 
@@ -113,11 +112,16 @@ if __name__ == "__main__":
 
     # Create the logger file handler to write the logs to file.
     handler = logging.FileHandler(log_path / f'WVSM-{datetime.datetime.now().strftime("%d%m%y-%H%M%S")}.log')
-    handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
+    logFormatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+    handler.setFormatter(logFormatter)
     logger.addHandler(handler)
 
+    consoleHandler = logging.StreamHandler()
+    consoleHandler.setFormatter(logFormatter)
+    logger.addHandler(consoleHandler)
+
     logger.info("=" * 50)
-    logger.info("Running WaVeS...")
+    logger.info("Running LiVeS...")
 
     ## ERROR STUFF
     old_excepthook = sys.excepthook
@@ -128,7 +132,7 @@ if __name__ == "__main__":
     app.setQuitOnLastWindowClosed(False)
     w = QtWidgets.QWidget()
 
-    icon_dir = Path.cwd() / "WaVeS/spec/icon.ico"  # For testing the compiled version in the dist folder
+    icon_dir = Path.cwd() / "LiVeS/spec/icon.ico"  # For testing the compiled version in the dist folder
     if not icon_dir.is_file():
         icon_dir = Path.cwd() / "icon.ico"
     if not icon_dir.is_file():

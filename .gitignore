@@ -1,8 +1,6 @@
-/LiVeS/build/
-/LiVeS/dist/
-/LiVeS/main.spec
+/build/
+/dist/
+/main.spec
 /.idea/
-/LiVeS/
-/main.exe
 *.pyc
 *.spec
