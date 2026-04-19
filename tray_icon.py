@@ -28,6 +28,8 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
         showdevices.triggered.connect(self.show_devices)
         open_config = menu.addAction("Open configuration file")
         open_config.triggered.connect(self.open_config_file)
+        restart_ = menu.addAction("Restart app")
+        restart_.triggered.connect(self.restart_app)
         exit_ = menu.addAction("Exit")
         exit_.triggered.connect(self.exit)
         self.setContextMenu(menu)
@@ -63,6 +65,12 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
     def reload(self):
         self.showMessage("Volume Slider Manager", "Reloading slider mappings...", self.icon)
         self.thread.control.get_mapping()
+
+    def restart_app(self):
+        logger.info("Restarting application.")
+        self.thread.running = False
+        self.thread.wait()
+        sys.exit(0)
 
     def exit(self):
         logger.info("Quitting application.")

@@ -138,18 +138,41 @@ class Control:
             if len(self.pulse.sink_input_list()) != self.sink_number:
                 self.sink_number = len(self.pulse.sink_input_list())
                 self.reset_volume()
-        except PulseError:
-            self.sink_number = len(self.pulse.sink_input_list())
-            self.reset_volume()
+        except PulseError as e:
+            logger.warning(f"PulseError while setting volume (likely due to sink change): {e}")
+            # Refresh sinks gracefully when an error occurs
+            try:
+                self.sink_number = len(self.pulse.sink_input_list())
+                self._refresh_all_sinks()
+            except Exception as e:
+                logger.error(f"Error refreshing sinks: {e}")
 
     def mute_mic(self, muted: bool):
-        for source in self.pulse.source_list():
-            self.pulse.mute(source, muted)
+        try:
+            for source in self.pulse.source_list():
+                self.pulse.mute(source, muted)
+        except PulseError as e:
+            logger.warning(f"PulseError while muting microphone: {e}")
 
     def reset_volume(self):
         logger.info("Resetting volume")
+        try:
+            self._refresh_all_sinks()
+        except Exception as e:
+            logger.error(f"Error resetting volume: {e}")
+
+    def _refresh_all_sinks(self):
+        """Refresh sinks for all sessions. Called when audio output/sink changes."""
+        logger.info("Refreshing all sinks")
         for index, app in self.sessions.items():
-            app.reset_volume()
+            try:
+                app.refresh_sinks()
+                # Set the current volume after refresh
+                if app.volume is not None:
+                    for sink in app.sinks:
+                        self.pulse.volume_set_all_chans(sink, app.volume)
+            except Exception as e:
+                logger.warning(f"Error refreshing sinks for session {index}: {e}")
 
     def get_port(self):
         ports = list_ports.comports()

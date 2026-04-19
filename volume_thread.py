@@ -42,10 +42,13 @@ class VolumeThread(QThread):
                     # Data is formatted as "<val>|<val>|<val>|<val>|<val>?<micmute>"
                     data = str(self.arduino.readline()[:-2], "utf-8")  # Trim off '\r\n'.
                     if data:
-                        values = [float(val) for val in data.split("?")[0].split("|")]
-                        self.control.set_volume(values)
-                        if data.split("?")[1]:
-                            self.control.mute_mic(bool(int(data.split("?")[1])))
+                        try:
+                            values = [float(val) for val in data.split("?")[0].split("|")]
+                            self.control.set_volume(values)
+                            if data.split("?")[1]:
+                                self.control.mute_mic(bool(int(data.split("?")[1])))
+                        except Exception as e:
+                            logger.warning(f"Error processing volume data: {e}")
                 except serial.SerialException:
                     if not (self.arduino is None):
                         self.arduino.close()

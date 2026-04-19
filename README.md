@@ -55,7 +55,7 @@ This will allow you to control all unmapped apps with "unmapped" but exclude Chr
 Upon running the executable, a tray icon will open. Clicking the icon will reload the mappings from `mapping.txt`, so that they can be changed as desired without having to close and restart the app.
 
 ## Customisation
-You are free to use the source code. The repository contains a `buid.sh` file that will compile the necessary files into an executable in the same directory, including the icon. If you share this project with other parties, please do give credit where appropriate.
+You are free to use the source code. The repository contains a `build.sh` file that will compile the necessary files into an executable in the same directory, including the icon. If you share this project with other parties, please do give credit where appropriate.
 
 ## Contributing
 This was really a side project that escalated, up to the point that I wanted to release it and put too much time into it. As such, I will probably not include any suggestions into the app, also due to time constraints.

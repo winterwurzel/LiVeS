@@ -1,5 +1,6 @@
 /build/
 /dist/
+/distbak/
 /main.spec
 /.idea/
 *.pyc
