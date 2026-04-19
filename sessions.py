@@ -25,22 +25,38 @@ class Base(ABC):
         self.pulse = pulse
         self.sinks = list()
         self.volume = None
+        self._sink_ids = set()
 
     @abstractmethod
     def refresh_sinks(self):
         pass
 
     def set_volume(self, value):
+        self.refresh_sinks()
+        sink_ids = {getattr(sink, 'index', None) for sink in self.sinks}
+        new_sinks = bool(self.sinks and sink_ids != self._sink_ids)
+
+        if self.volume is None:
+            self.volume = value
+
+        # Determine whether the current sink volumes already match the desired value.
+        current_volumes = [self.pulse.volume_get_all_chans(sink) for sink in self.sinks]
+        volume_mismatch = any(abs(current - value) >= 0.02 for current in current_volumes)
         delta = self.volume - value
-        if delta >= 0.02 or delta <= -0.02:
+
+        if new_sinks or volume_mismatch or delta >= 0.02 or delta <= -0.02:
             if value >= 0.97:
                 value = 1.0
             elif value <= 0.03:
                 value = 0
-            logger.info(f"delta={self.volume - value}, current volume={self.volume}, new volume={value}")
+            logger.info(
+                f"apply volume: current={self.volume}, new={value}, new_sinks={new_sinks}, "
+                f"mismatch={volume_mismatch}, sinks={len(self.sinks)}"
+            )
             for sink in self.sinks:
                 self.pulse.volume_set_all_chans(sink, value)
             self.volume = value
+            self._sink_ids = sink_ids
 
     def reset_volume(self):
         self.refresh_sinks()
